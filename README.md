@@ -34,6 +34,8 @@ Requires GTK 4.12+, libadwaita 1.4+ dev packages.
 - Launch **LinAuth** from your app grid, or run `linauth`
 - Import: toolbar ➜ pick your `Winauth Master ….zip`, enter the backup password
 - Double-click a row to copy its current code (Enter works too)
+- Menu (☰) ➜ **Preferences**: copy-on-single-click, start-on-login, master
+  password, store location, export
 - Menu (☰) ➜ **Master password…** to encrypt the store at rest, change or
   remove the password; on an unencrypted store the app also asks once at startup
 - Autostart: `linauth --install-autostart`

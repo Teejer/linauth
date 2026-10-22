@@ -1,3 +1,4 @@
+mod config;
 mod export;
 mod import;
 mod store;
@@ -29,6 +30,7 @@ struct RowState {
 struct AppState {
     store: RefCell<Store>,
     password: RefCell<Option<String>>,
+    config: RefCell<config::Config>,
     rows: RefCell<Vec<(gtk::ListBoxRow, RowState)>>,
     list: gtk::ListBox,
     toast_overlay: adw::ToastOverlay,
@@ -208,17 +210,37 @@ fn cli_export(path: &str) -> i32 {
     }
 }
 
+fn autostart_file() -> PathBuf {
+    config::config_dir().join("autostart/linauth.desktop")
+}
+
+fn autostart_enabled() -> bool {
+    autostart_file().exists()
+}
+
+fn set_autostart(enable: bool) -> Result<(), String> {
+    let path = autostart_file();
+    if enable {
+        let exe = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "linauth".into());
+        let desktop = format!(
+            "[Desktop Entry]\nType=Application\nName=LinAuth\nExec={exe}\nIcon=io.github.teejer.LinAuth\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+        );
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, desktop).map_err(|e| e.to_string())
+    } else if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())
+    } else {
+        Ok(())
+    }
+}
+
 fn install_autostart() -> i32 {
-    let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "linauth".into());
-    let dir = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"));
-    let _ = std::fs::create_dir_all(dir.join("autostart"));
-    let desktop = format!(
-        "[Desktop Entry]\nType=Application\nName=LinAuth\nExec={exe}\nIcon=io.github.teejer.LinAuth\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
-    );
-    let path = dir.join("autostart/linauth.desktop");
-    match std::fs::write(&path, desktop) {
+    let path = autostart_file();
+    match set_autostart(true) {
         Ok(()) => {
             eprintln!("wrote {}", path.display());
             0
@@ -256,6 +278,8 @@ fn build_ui(app: &adw::Application) {
         .build();
     let menu = gtk::gio::Menu::new();
     menu.append(Some("Master password\u{2026}"), Some("win.master-password"));
+    menu.append(Some("Preferences\u{2026}"), Some("win.prefs"));
+    menu.append(Some("About LinAuth"), Some("win.about"));
     let menu_btn = gtk::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .tooltip_text("Menu")
@@ -306,6 +330,7 @@ fn build_ui(app: &adw::Application) {
     let state = Rc::new(AppState {
         store: RefCell::new(Store::default()),
         password: RefCell::new(None),
+        config: RefCell::new(config::Config::load()),
         rows: RefCell::new(Vec::new()),
         list: list.clone(),
         toast_overlay: toast_overlay.clone(),
@@ -355,6 +380,31 @@ fn build_ui(app: &adw::Application) {
     }
     window.add_action(&mp_act);
 
+    let prefs_act = gtk::gio::SimpleAction::new("prefs", None);
+    {
+        let s = state.clone();
+        let w = window.clone();
+        prefs_act.connect_activate(move |_, _| open_preferences(&s, &w));
+    }
+    window.add_action(&prefs_act);
+
+    let about_act = gtk::gio::SimpleAction::new("about", None);
+    {
+        let w = window.clone();
+        about_act.connect_activate(move |_, _| {
+            let about = adw::AboutWindow::builder()
+                .transient_for(&w)
+                .application_name("LinAuth")
+                .version(env!("CARGO_PKG_VERSION"))
+                .comments("Native TOTP/HOTP authenticator that imports WinAuth backups")
+                .website("https://github.com/Teejer/linauth")
+                .license_type(gtk::License::Gpl30Only)
+                .build();
+            about.present();
+        });
+    }
+    window.add_action(&about_act);
+
     import_btn.connect_clicked({
         let s = state.clone();
         let w = window.clone();
@@ -393,7 +443,8 @@ fn toast(state: &AppState, msg: &str) {
 fn make_row(state: &Rc<AppState>, acc: &Account) -> (gtk::ListBoxRow, RowState) {
     // deliberately NOT activatable: single-click must not copy (see gesture below)
     let row = gtk::ListBoxRow::builder().can_focus(true).build();
-    row.set_tooltip_text(Some("Double-click to copy"));
+    let single = state.config.borrow().copy_on_single_click;
+    row.set_tooltip_text(Some(if single { "Click to copy" } else { "Double-click to copy" }));
 
     let hbox = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -464,11 +515,13 @@ fn make_row(state: &Rc<AppState>, acc: &Account) -> (gtk::ListBoxRow, RowState) 
         })
     };
 
-    // double-click copies (single click stays inert on purpose)
+    // double-click copies (single click stays inert unless enabled in prefs)
     let click = gtk::GestureClick::builder().button(1).build();
     let cf = copy_fn.clone();
+    let s_cfg = state.clone();
     click.connect_pressed(move |_g, n_press, _x, _y| {
-        if n_press == 2 {
+        let want = if s_cfg.config.borrow().copy_on_single_click { 1 } else { 2 };
+        if n_press == want {
             cf();
         }
     });
@@ -742,7 +795,7 @@ fn finish_import(state: &Rc<AppState>, path: &Path, zip_pw: Option<&str>) {
     }
 }
 
-fn do_export(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+fn do_export<W: IsA<gtk::Window> + Clone + 'static>(state: &Rc<AppState>, window: &W) {
     let accounts: Vec<Account> = state.store.borrow().accounts.iter().map(|sa| sa.account.clone()).collect();
     if accounts.is_empty() {
         toast(state, "No accounts to export");
@@ -776,8 +829,8 @@ fn do_export(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
     });
 }
 
-fn prompt_export_password(
-    window: &adw::ApplicationWindow,
+fn prompt_export_password<W: IsA<gtk::Window>>(
+    window: &W,
     state: &Rc<AppState>,
     path: PathBuf,
     accounts: Vec<Account>,
@@ -826,7 +879,7 @@ fn prompt_export_password(
 
 // ------------------------------------------------------ master password flow
 
-fn master_password_flow(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+fn master_password_flow<W: IsA<gtk::Window> + Clone + 'static>(state: &Rc<AppState>, window: &W) {
     if state.store_path.is_encrypted() {
         if state.password.borrow().is_none() {
             // store never unlocked this session; saving now would clobber it
@@ -876,7 +929,7 @@ fn master_password_flow(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
     }
 }
 
-fn prompt_set_password(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+fn prompt_set_password<W: IsA<gtk::Window> + Clone + 'static>(state: &Rc<AppState>, window: &W) {
     let s = state.clone();
     let s_cb = state.clone();
     prompt_new_password(
@@ -896,7 +949,7 @@ fn prompt_set_password(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
     );
 }
 
-fn confirm_remove_password(window: &adw::ApplicationWindow, state: &Rc<AppState>) {
+fn confirm_remove_password<W: IsA<gtk::Window>>(window: &W, state: &Rc<AppState>) {
     let dlg = adw::MessageDialog::builder()
         .transient_for(window)
         .modal(true)
@@ -952,8 +1005,8 @@ fn prompt_encrypt_now(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
     dlg.present();
 }
 
-fn prompt_new_password(
-    window: &adw::ApplicationWindow,
+fn prompt_new_password<W: IsA<gtk::Window>>(
+    window: &W,
     state: &Rc<AppState>,
     heading: &str,
     body: &str,
@@ -995,4 +1048,95 @@ fn prompt_new_password(
         }
     });
     dlg.present();
+}
+
+// ------------------------------------------------------------------ settings
+
+fn open_preferences(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+    let prefs = adw::PreferencesWindow::builder()
+        .transient_for(window)
+        .title("Preferences")
+        .default_width(460)
+        .build();
+
+    let page = adw::PreferencesPage::new();
+
+    let general = adw::PreferencesGroup::builder().title("General").build();
+    let click_row = adw::SwitchRow::builder()
+        .title("Copy code on single click")
+        .subtitle("Otherwise double-click a row, or press Enter on it")
+        .active(state.config.borrow().copy_on_single_click)
+        .build();
+    {
+        let s = state.clone();
+        click_row.connect_active_notify(move |r| {
+            let on = r.is_active();
+            let cfg = {
+                let mut c = s.config.borrow_mut();
+                c.copy_on_single_click = on;
+                c.clone()
+            };
+            if let Err(e) = cfg.save() {
+                toast(&s, &format!("could not save config: {e}"));
+            }
+            rebuild_rows(&s);
+        });
+    }
+    let auto_row = adw::SwitchRow::builder()
+        .title("Start LinAuth on login")
+        .active(autostart_enabled())
+        .build();
+    {
+        let s = state.clone();
+        auto_row.connect_active_notify(move |r| {
+            let on = r.is_active();
+            if let Err(e) = set_autostart(on) {
+                toast(&s, &format!("could not change autostart: {e}"));
+                r.set_active(!on);
+            }
+        });
+    }
+    general.add(&click_row);
+    general.add(&auto_row);
+
+    let sec = adw::PreferencesGroup::builder().title("Security").build();
+    let enc = state.store_path.is_encrypted();
+    let pw_row = adw::ActionRow::builder()
+        .title("Master password")
+        .subtitle(if enc {
+            "Set \u{2014} the store is encrypted at rest"
+        } else {
+            "Not set \u{2014} accounts are stored unencrypted"
+        })
+        .build();
+    {
+        let s = state.clone();
+        let p = prefs.clone();
+        pw_row.connect_activated(move |_| master_password_flow(&s, &p));
+    }
+    let store_row = adw::ActionRow::builder()
+        .title("Account store")
+        .subtitle(state.store_path.display_path())
+        .build();
+    store_row.set_activatable(false);
+    sec.add(&pw_row);
+    sec.add(&store_row);
+
+    let bak = adw::PreferencesGroup::builder().title("Backup").build();
+    let export_row = adw::ActionRow::builder()
+        .title("Export backup\u{2026}")
+        .subtitle("A .zip that restores in WinAuth too, or plain .txt")
+        .build();
+    {
+        let s = state.clone();
+        let p = prefs.clone();
+        export_row.connect_activated(move |_| do_export(&s, &p));
+    }
+    bak.add(&export_row);
+
+    page.add(&general);
+    page.add(&sec);
+    page.add(&bak);
+    prefs.add(&page);
+    prefs.present();
 }

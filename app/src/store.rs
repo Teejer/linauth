@@ -78,6 +78,8 @@ impl StorePath {
             Some(pw) => {
                 let blob = encrypt(&json, pw)?;
                 fs::write(self.encrypted(), blob).map_err(|e| e.to_string())?;
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(self.encrypted(), fs::Permissions::from_mode(0o600));
                 // if migrating plain -> encrypted, remove plaintext copy
                 let _ = fs::remove_file(self.plain());
             }
@@ -90,6 +92,15 @@ impl StorePath {
             }
         }
         Ok(())
+    }
+
+    /// where the store lives, for display in the UI
+    pub fn display_path(&self) -> String {
+        if self.is_encrypted() {
+            self.encrypted().display().to_string()
+        } else {
+            self.plain().display().to_string()
+        }
     }
 
     /// marker set when the user declines encryption; silences the first-run prompt
