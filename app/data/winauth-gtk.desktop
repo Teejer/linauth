@@ -7,5 +7,5 @@ Exec=winauth-gtk
 Icon=winauth-gtk
 Terminal=false
 Categories=Utility;Security;
-StartupWMClass=winauth-gtk
+StartupWMClass=io.github.teejer.WinAuthGtk
 Keywords=2fa;totp;otp;authenticator;winauth;
