@@ -15,7 +15,7 @@ without Wine or .NET — the name is the natural conclusion.
 - Standard `otpauth://` support incl. WinAuth quirks (`+` as space in labels,
   unpadded base32, `icon=`/`serial=`/`deviceid=` extras preserved)
 - TOTP (SHA1/256/512, any period/digits) and HOTP (counter advances on use)
-- Live codes with countdown, click-to-copy, search
+- Live codes with countdown, double-click to copy, search
 - Optional at-rest encryption of the account store
   (Argon2id → XChaCha20-Poly1305)
 - Headless mode for scripts/SSH
@@ -33,7 +33,7 @@ Requires GTK 4.12+, libadwaita 1.4+ dev packages.
 
 - Launch **LinAuth** from your app grid, or run `linauth`
 - Import: toolbar ➜ pick your `Winauth Master ….zip`, enter the backup password
-- Click a row to copy its current code
+- Double-click a row to copy its current code (Enter works too)
 - Autostart: `linauth --install-autostart`
 
 ### Headless

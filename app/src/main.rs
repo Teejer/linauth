@@ -279,10 +279,17 @@ fn build_ui(app: &adw::Application) {
         .margin_end(18)
         .build();
 
+    let scroller = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .vexpand(true)
+        .child(&clamp)
+        .build();
+
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.add_top_bar(&search);
-    toolbar.set_content(Some(&clamp));
+    toolbar.set_content(Some(&scroller));
 
     let toast_overlay = adw::ToastOverlay::new();
     toast_overlay.set_child(Some(&toolbar));
@@ -364,7 +371,9 @@ fn toast(state: &AppState, msg: &str) {
 }
 
 fn make_row(state: &Rc<AppState>, acc: &Account) -> (gtk::ListBoxRow, RowState) {
-    let row = gtk::ListBoxRow::builder().activatable(true).can_focus(true).build();
+    // deliberately NOT activatable: single-click must not copy (see gesture below)
+    let row = gtk::ListBoxRow::builder().can_focus(true).build();
+    row.set_tooltip_text(Some("Double-click to copy"));
 
     let hbox = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -417,21 +426,46 @@ fn make_row(state: &Rc<AppState>, acc: &Account) -> (gtk::ListBoxRow, RowState) 
     hbox.append(&code_label);
     row.set_child(Some(&hbox));
 
-    let s = state.clone();
-    let acc2 = acc.clone();
-    row.connect_activate(move |r| {
-        let now = now_unix();
-        let code = code_for(&acc2, now);
-        let clip = r.clipboard();
-        clip.set_text(&code);
-        match acc2.kind {
-            Kind::Totp => toast(&s, &format!("Copied code for {}", acc2.display_name())),
-            Kind::Hotp => {
-                advance_hotp(&s, &acc2);
-                toast(&s, &format!("Copied & advanced counter for {}", acc2.display_name()));
+    let copy_fn = {
+        let s = state.clone();
+        let acc2 = acc.clone();
+        let row2 = row.clone();
+        Rc::new(move || {
+            let now = now_unix();
+            let code = code_for(&acc2, now);
+            row2.clipboard().set_text(&code);
+            match acc2.kind {
+                Kind::Totp => toast(&s, &format!("Copied code for {}", acc2.display_name())),
+                Kind::Hotp => {
+                    advance_hotp(&s, &acc2);
+                    toast(&s, &format!("Copied & advanced counter for {}", acc2.display_name()));
+                }
             }
+        })
+    };
+
+    // double-click copies (single click stays inert on purpose)
+    let click = gtk::GestureClick::builder().button(1).build();
+    let cf = copy_fn.clone();
+    click.connect_pressed(move |_g, n_press, _x, _y| {
+        if n_press == 2 {
+            cf();
         }
     });
+    row.add_controller(click);
+
+    // Enter on a focused row copies too, for keyboard users
+    let keys = gtk::EventControllerKey::new();
+    let cf = copy_fn.clone();
+    keys.connect_key_pressed(move |_c, key, _hv, _state| {
+        if matches!(key, gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter | gtk::gdk::Key::ISO_Enter) {
+            cf();
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    });
+    row.add_controller(keys);
 
     (
         row,
