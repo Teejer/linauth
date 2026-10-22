@@ -874,6 +874,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "linauth"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "chacha20poly1305",
+ "data-encoding",
+ "getrandom 0.3.4",
+ "gtk4",
+ "hmac 0.13.0",
+ "libadwaita",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "sha2",
+ "urlencoding",
+ "zeroize",
+ "zip",
+]
+
+[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1416,26 +1436,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "winauth-gtk"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "chacha20poly1305",
- "data-encoding",
- "getrandom 0.3.4",
- "gtk4",
- "hmac 0.13.0",
- "libadwaita",
- "serde",
- "serde_json",
- "sha1 0.11.0",
- "sha2",
- "urlencoding",
- "zeroize",
- "zip",
 ]
 
 [[package]]

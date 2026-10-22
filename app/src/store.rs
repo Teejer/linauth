@@ -1,6 +1,6 @@
 //! Local account store: JSON, optionally encrypted at rest with a master
 //! password (Argon2id -> XChaCha20-Poly1305). File:
-//! ~/.local/share/winauth-gtk/accounts.json[.enc]
+//! ~/.local/share/linauth/accounts.json[.enc]
 
 use std::fs;
 use std::path::PathBuf;
@@ -36,7 +36,14 @@ pub struct StorePath(PathBuf);
 
 impl StorePath {
     pub fn new() -> Self {
-        let dir = dirs_next().join("winauth-gtk");
+        let dir = dirs_next().join("linauth");
+        if !dir.exists() {
+            // migrate from the pre-rename winauth-gtk location
+            let old = dirs_next().join("winauth-gtk");
+            if old.exists() {
+                let _ = fs::rename(&old, &dir);
+            }
+        }
         let _ = fs::create_dir_all(&dir);
         StorePath(dir)
     }
@@ -115,7 +122,7 @@ fn encrypt(plain: &[u8], password: &str) -> Result<Vec<u8>, String> {
 fn decrypt(blob: &[u8], password: &str) -> Result<Vec<u8>, String> {
     let rest = blob
         .strip_prefix(MAGIC)
-        .ok_or("not a winauth-gtk encrypted store")?;
+        .ok_or("not a linauth encrypted store")?;
     if rest.len() < SALT_LEN + NONCE_LEN + 16 {
         return Err("truncated store".into());
     }

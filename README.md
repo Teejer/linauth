@@ -1,8 +1,8 @@
-# winauth-gtk
+# LinAuth
 
 A native Linux (Rust + GTK4/libadwaita) TOTP/HOTP authenticator that imports
 **WinAuth** backups directly. Born from migrating a WinAuth setup off Windows
-without Wine or .NET.
+without Wine or .NET — the name is the natural conclusion.
 
 ![screenshot placeholder]
 
@@ -22,29 +22,29 @@ without Wine or .NET.
 
 ```sh
 cd app
-./install.sh            # installs into ~/.local
+./install.sh            # installs into ~/.local (absolute Exec; works with any PATH)
 ```
 
 Requires GTK 4.12+, libadwaita 1.4+ dev packages.
 
 ## Usage
 
-- Launch **Codes** from your app grid, or run `winauth-gtk`
+- Launch **LinAuth** from your app grid, or run `linauth`
 - Import: toolbar ➜ pick your `Winauth Master ….zip`, enter the backup password
 - Click a row to copy its current code
-- Autostart: `winauth-gtk --install-autostart`
+- Autostart: `linauth --install-autostart`
 
 ### Headless
 
 ```sh
-winauth-gtk codes                     # print current codes
-winauth-gtk import backup.zip         # zip pw: $WINAUTH_ZIP_PWD,
-                                      # encrypt store with: $WINAUTH_STORE_PWD
+linauth codes                     # print current codes
+linauth import backup.zip         # zip pw: $WINAUTH_ZIP_PWD,
+                                  # encrypt store with: $WINAUTH_STORE_PWD
 ```
 
 ## Security notes
 
-- Account store: `~/.local/share/winauth-gtk/accounts.json` (mode `0600`);
+- Account store: `~/.local/share/linauth/accounts.json` (mode `0600`);
   save with a master password to encrypt it (Argon2id + XChaCha20-Poly1305)
 - Code generation verified against RFC 4226/6238 vectors and independently
   cross-checked against a second implementation of the WinAuth export format
@@ -53,7 +53,7 @@ winauth-gtk import backup.zip         # zip pw: $WINAUTH_ZIP_PWD,
 
 - WinAuth's non-standard types: Steam mobile confirmations, Battle.net,
   Guild Wars, Okta push, YubiKey HMAC — standard TOTP/HOTP only
-- Tray icon (GTK4 dropped StatusIcon; PPA for a `dbusmenu`-based tray)
+- Tray icon (GTK4 dropped StatusIcon; planned via StatusNotifierItem)
 
 ## Credits
 

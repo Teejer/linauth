@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Install winauth-gtk.
-#   ./install.sh                          -> ~/.local  (needs ~/.local/bin on PATH)
-#   sudo PREFIX=/usr/local ./install.sh   -> system-wide (recommended: GNOME's
-#                                            session PATH may not include ~/.local/bin)
+# Install LinAuth.
+#   ./install.sh                          -> ~/.local  (Exec is absolute, works anyway)
+#   sudo PREFIX=/usr/local ./install.sh   -> system-wide
 set -euo pipefail
 PREFIX="${PREFIX:-$HOME/.local}"
 here="$(cd "$(dirname "$0")" && pwd)"
-ID=io.github.teejer.WinAuthGtk
+ID=io.github.teejer.LinAuth
 
 cargo build --release --manifest-path "$here/Cargo.toml"
 
-install -Dm755 "$here/target/release/winauth-gtk" "$PREFIX/bin/winauth-gtk"
+install -Dm755 "$here/target/release/linauth" "$PREFIX/bin/linauth"
 install -Dm644 "$here/data/$ID.svg" "$PREFIX/share/icons/hicolor/scalable/apps/$ID.svg"
 sed "s|@PREFIX@|$PREFIX|g" "$here/data/$ID.desktop.in" > "$PREFIX/share/applications/$ID.desktop"
 
@@ -35,6 +34,6 @@ update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
 gtk-update-icon-cache -q "$PREFIX/share/icons/hicolor" 2>/dev/null || true
 
 echo "installed:"
-echo "  $PREFIX/bin/winauth-gtk"
+echo "  $PREFIX/bin/linauth"
 echo "  $PREFIX/share/applications/$ID.desktop"
 echo "  $PREFIX/share/icons/hicolor/scalable/apps/$ID.svg"

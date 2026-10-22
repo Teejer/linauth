@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=WinAuth Codes
+Name=LinAuth
 GenericName=Two-factor authenticator
 Comment=Native TOTP/HOTP authenticator, WinAuth-backup compatible
-Exec=@PREFIX@/bin/winauth-gtk
-Icon=io.github.teejer.WinAuthGtk
+Exec=@PREFIX@/bin/linauth
+Icon=io.github.teejer.LinAuth
 Terminal=false
 Categories=Utility;Security;Settings;
-StartupWMClass=io.github.teejer.WinAuthGtk
+StartupWMClass=io.github.teejer.LinAuth
 Keywords=2fa;totp;otp;authenticator;winauth;codes;
