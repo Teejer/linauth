@@ -7,3 +7,4 @@
 # build artifacts
 /app/target
 **/*.rs.bk
+README-LinAuth.md
