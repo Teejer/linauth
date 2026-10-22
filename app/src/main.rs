@@ -80,7 +80,26 @@ fn main() {
     }
 
     let app = adw::Application::builder().application_id(APP_ID).build();
-    app.connect_activate(build_ui);
+    // one main window: relaunching while running just presents it
+    let main_window: Rc<RefCell<Option<adw::ApplicationWindow>>> = Rc::new(RefCell::new(None));
+    {
+        let slot = main_window.clone();
+        app.connect_activate(move |app| {
+            if let Some(w) = slot.borrow().as_ref() {
+                w.present();
+                return;
+            }
+            let w = build_ui(app);
+            *slot.borrow_mut() = Some(w.clone());
+            let slot2 = slot.clone();
+            w.connect_destroy(move |w| {
+                let mut slot = slot2.borrow_mut();
+                if slot.as_ref().is_some_and(|s| s.as_ptr() == w.as_ptr()) {
+                    *slot = None;
+                }
+            });
+        });
+    }
     app.run();
 }
 
@@ -254,12 +273,14 @@ fn install_autostart() -> i32 {
 
 // ---------------------------------------------------------------------- UI
 
-fn build_ui(app: &adw::Application) {
+fn build_ui(app: &adw::Application) -> adw::ApplicationWindow {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("LinAuth")
         .default_width(460)
         .default_height(600)
+        // close really destroys the window; last window closed => process quits
+        .hide_on_close(false)
         .build();
 
     let header = gtk::HeaderBar::new();
@@ -382,6 +403,7 @@ fn build_ui(app: &adw::Application) {
                 .comments("Native TOTP/HOTP authenticator that imports WinAuth backups")
                 .website("https://github.com/Teejer/linauth")
                 .license_type(gtk::License::Gpl30Only)
+                .hide_on_close(false)
                 .build();
             about.present();
         });
@@ -415,6 +437,7 @@ fn build_ui(app: &adw::Application) {
     });
 
     window.present();
+    window
 }
 
 fn toast(state: &AppState, msg: &str) {
@@ -1066,6 +1089,7 @@ fn open_preferences(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
         .transient_for(window)
         .title("Preferences")
         .default_width(460)
+        .hide_on_close(false)
         .build();
 
     let page = adw::PreferencesPage::new();
