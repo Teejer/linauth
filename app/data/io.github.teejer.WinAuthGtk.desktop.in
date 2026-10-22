@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=Codes
+Name=WinAuth Codes
 GenericName=Two-factor authenticator
 Comment=Native TOTP/HOTP authenticator, WinAuth-backup compatible
-Exec=winauth-gtk
-Icon=winauth-gtk
+Exec=@PREFIX@/bin/winauth-gtk
+Icon=io.github.teejer.WinAuthGtk
 Terminal=false
-Categories=Utility;Security;
+Categories=Utility;Security;Settings;
 StartupWMClass=io.github.teejer.WinAuthGtk
-Keywords=2fa;totp;otp;authenticator;winauth;
+Keywords=2fa;totp;otp;authenticator;winauth;codes;

@@ -161,7 +161,7 @@ fn install_autostart() -> i32 {    let exe = std::env::current_exe().map(|p| p.d
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"));
     let _ = std::fs::create_dir_all(dir.join("autostart"));
     let desktop = format!(
-        "[Desktop Entry]\nType=Application\nName=WinAuth Codes\nExec={exe}\nIcon=winauth-gtk\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+        "[Desktop Entry]\nType=Application\nName=WinAuth Codes\nExec={exe}\nIcon=io.github.teejer.WinAuthGtk\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
     );
     let path = dir.join("autostart/winauth-gtk.desktop");
     match std::fs::write(&path, desktop) {
