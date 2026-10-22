@@ -235,13 +235,13 @@ fn install_autostart() -> i32 {
 fn build_ui(app: &adw::Application) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
-        .title("Codes")
+        .title("LinAuth")
         .default_width(460)
         .default_height(600)
         .build();
 
     let header = gtk::HeaderBar::new();
-    header.set_title_widget(Some(&adw::WindowTitle::new("Codes", "")));
+    header.set_title_widget(Some(&adw::WindowTitle::new("LinAuth", "")));
     let import_btn = gtk::Button::builder()
         .icon_name("document-open-symbolic")
         .tooltip_text("Import WinAuth backup (.zip or .txt)")
