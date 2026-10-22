@@ -82,14 +82,28 @@ impl StorePath {
                 let _ = fs::remove_file(self.plain());
             }
             None => {
-                let mut perm = std::fs::Permissions::from_mode(0o600);
-                let _ = &mut perm;
                 fs::write(self.plain(), &json).map_err(|e| e.to_string())?;
                 use std::os::unix::fs::PermissionsExt;
                 let _ = fs::set_permissions(self.plain(), fs::Permissions::from_mode(0o600));
+                // if the password was just removed, stale ciphertext must not win on load
+                let _ = fs::remove_file(self.encrypted());
             }
         }
         Ok(())
+    }
+
+    /// marker set when the user declines encryption; silences the first-run prompt
+    fn declined_flag(&self) -> PathBuf {
+        self.0.join("unencrypted-ok")
+    }
+    pub fn encryption_declined(&self) -> bool {
+        self.declined_flag().exists()
+    }
+    pub fn remember_declined(&self) {
+        let _ = fs::write(self.declined_flag(), "");
+    }
+    pub fn forget_declined(&self) {
+        let _ = fs::remove_file(self.declined_flag());
     }
 }
 
@@ -154,5 +168,29 @@ mod tests {
         let blob = encrypt(&data, "hunter2").unwrap();
         assert_eq!(decrypt(&blob, "hunter2").unwrap(), data);
         assert!(decrypt(&blob, "wrong").is_err());
+    }
+
+    #[test]
+    fn save_switches_encryption_and_removes_stale_file() {
+        let dir = std::env::temp_dir().join(format!("linauth-store-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let sp = StorePath(dir.clone());
+        let st = Store::default();
+
+        sp.save(&st, None).unwrap();
+        assert!(sp.plain().exists() && !sp.encrypted().exists());
+
+        // setting a password encrypts and wipes the plaintext copy
+        sp.save(&st, Some("pw")).unwrap();
+        assert!(sp.encrypted().exists() && !sp.plain().exists());
+        assert!(sp.load(Some("pw")).is_ok());
+
+        // removing it writes plaintext and wipes the ciphertext (load prefers .enc!)
+        sp.save(&st, None).unwrap();
+        assert!(sp.plain().exists() && !sp.encrypted().exists());
+        assert!(sp.load(None).is_ok());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

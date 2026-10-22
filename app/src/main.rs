@@ -254,6 +254,14 @@ fn build_ui(app: &adw::Application) {
         .icon_name("document-save-symbolic")
         .tooltip_text("Export backup (.zip restores in WinAuth too)")
         .build();
+    let menu = gtk::gio::Menu::new();
+    menu.append(Some("Master password\u{2026}"), Some("win.master-password"));
+    let menu_btn = gtk::MenuButton::builder()
+        .icon_name("open-menu-symbolic")
+        .tooltip_text("Menu")
+        .build();
+    menu_btn.set_menu_model(Some(&menu));
+    header.pack_end(&menu_btn);
     header.pack_end(&import_btn);
     header.pack_end(&add_btn);
     header.pack_end(&export_btn);
@@ -328,12 +336,24 @@ fn build_ui(app: &adw::Application) {
     } else {
         match state.store_path.load(None) {
             Ok(st) => {
+                let nonempty = !st.accounts.is_empty();
                 *state.store.borrow_mut() = st;
                 rebuild_rows(&state);
+                if nonempty && !state.store_path.encryption_declined() {
+                    prompt_encrypt_now(&state, &window);
+                }
             }
             Err(e) => toast(&state, &format!("cannot load accounts: {e}")),
         }
     }
+
+    let mp_act = gtk::gio::SimpleAction::new("master-password", None);
+    {
+        let s = state.clone();
+        let w = window.clone();
+        mp_act.connect_activate(move |_, _| master_password_flow(&s, &w));
+    }
+    window.add_action(&mp_act);
 
     import_btn.connect_clicked({
         let s = state.clone();
@@ -800,6 +820,179 @@ fn prompt_export_password(
             }
         }
         _ => {}
+    });
+    dlg.present();
+}
+
+// ------------------------------------------------------ master password flow
+
+fn master_password_flow(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+    if state.store_path.is_encrypted() {
+        if state.password.borrow().is_none() {
+            // store never unlocked this session; saving now would clobber it
+            toast(state, "Unlock the store first (restart and enter the password)");
+            return;
+        }
+        let dlg = adw::MessageDialog::builder()
+            .transient_for(window)
+            .modal(true)
+            .heading("Master password")
+            .body("Your account store is encrypted with a master password.")
+            .build();
+        dlg.add_response("cancel", "Cancel");
+        dlg.add_response("remove", "_Remove\u{2026}");
+        dlg.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+        dlg.add_response("change", "_Change\u{2026}");
+        dlg.set_response_appearance("change", adw::ResponseAppearance::Suggested);
+        dlg.set_default_response(Some("change"));
+        dlg.set_close_response("cancel");
+        let s = state.clone();
+        let w = window.clone();
+        dlg.connect_response(None, move |_, resp| match resp {
+            "change" => {
+                let s2 = s.clone();
+                let s3 = s.clone();
+                prompt_new_password(
+                    &w,
+                    &s2,
+                    "Change master password",
+                    "Choose the new password. You'll use it to unlock the app.",
+                    "_Save",
+                    Box::new(move |pw| match s3.store_path.save(&s3.store.borrow(), Some(&pw)) {
+                        Ok(()) => {
+                            *s3.password.borrow_mut() = Some(pw);
+                            toast(&s3, "Master password changed");
+                        }
+                        Err(e) => toast(&s3, &format!("could not re-encrypt: {e}")),
+                    }),
+                );
+            }
+            "remove" => confirm_remove_password(&w, &s),
+            _ => {}
+        });
+        dlg.present();
+    } else {
+        prompt_set_password(state, window);
+    }
+}
+
+fn prompt_set_password(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+    let s = state.clone();
+    let s_cb = state.clone();
+    prompt_new_password(
+        window,
+        &s,
+        "Encrypt account store",
+        "You'll enter this password when LinAuth starts. If you lose it, the accounts are gone \u{2014} keep a backup exported.",
+        "_Encrypt",
+        Box::new(move |pw| match s_cb.store_path.save(&s_cb.store.borrow(), Some(&pw)) {
+            Ok(()) => {
+                *s_cb.password.borrow_mut() = Some(pw);
+                s_cb.store_path.forget_declined();
+                toast(&s_cb, "Account store encrypted");
+            }
+            Err(e) => toast(&s_cb, &format!("could not encrypt: {e}")),
+        }),
+    );
+}
+
+fn confirm_remove_password(window: &adw::ApplicationWindow, state: &Rc<AppState>) {
+    let dlg = adw::MessageDialog::builder()
+        .transient_for(window)
+        .modal(true)
+        .heading("Remove master password?")
+        .body("Accounts will be saved unencrypted on disk again.")
+        .build();
+    dlg.add_response("cancel", "Cancel");
+    dlg.add_response("remove", "_Remove password");
+    dlg.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+    dlg.set_default_response(Some("cancel"));
+    dlg.set_close_response("cancel");
+    let s = state.clone();
+    dlg.connect_response(None, move |_, resp| {
+        if resp != "remove" {
+            return;
+        }
+        match s.store_path.save(&s.store.borrow(), None) {
+            Ok(()) => {
+                *s.password.borrow_mut() = None;
+                s.store_path.remember_declined(); // explicit choice: don't nag next start
+                toast(&s, "Master password removed \u{2014} store is unencrypted");
+            }
+            Err(e) => toast(&s, &format!("could not save: {e}")),
+        }
+    });
+    dlg.present();
+}
+
+fn prompt_encrypt_now(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+    let dlg = adw::MessageDialog::builder()
+        .transient_for(window)
+        .modal(true)
+        .heading("Protect your accounts?")
+        .body(
+            "Your 2FA seeds are currently saved unencrypted. A master password \
+             encrypts them at rest; you'll type it when LinAuth starts.",
+        )
+        .build();
+    dlg.add_response("later", "_Not now");
+    dlg.add_response("encrypt", "_Encrypt now");
+    dlg.set_response_appearance("encrypt", adw::ResponseAppearance::Suggested);
+    dlg.set_default_response(Some("encrypt"));
+    dlg.set_close_response("later");
+    let s = state.clone();
+    let w = window.clone();
+    dlg.connect_response(None, move |_, resp| {
+        if resp == "encrypt" {
+            prompt_set_password(&s, &w);
+        } else {
+            s.store_path.remember_declined();
+        }
+    });
+    dlg.present();
+}
+
+fn prompt_new_password(
+    window: &adw::ApplicationWindow,
+    state: &Rc<AppState>,
+    heading: &str,
+    body: &str,
+    ok_label: &str,
+    on_ok: Box<dyn Fn(String)>,
+) {
+    let dlg = adw::MessageDialog::builder()
+        .transient_for(window)
+        .modal(true)
+        .heading(heading)
+        .body(body)
+        .build();
+    let pw_row = adw::PasswordEntryRow::builder().title("Password").build();
+    let repeat_row = adw::PasswordEntryRow::builder().title("Repeat password").build();
+    let group = adw::PreferencesGroup::new();
+    group.add(&pw_row);
+    group.add(&repeat_row);
+    dlg.set_extra_child(Some(&group));
+    dlg.add_response("cancel", "Cancel");
+    dlg.add_response("ok", ok_label);
+    dlg.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
+    dlg.set_default_response(Some("ok"));
+    dlg.set_close_response("cancel");
+    let s = state.clone();
+    dlg.connect_response(None, move |_, resp| {
+        if resp != "ok" {
+            return;
+        }
+        let pw = pw_row.text().to_string();
+        let repeat = repeat_row.text().to_string();
+        pw_row.set_text("");
+        repeat_row.set_text("");
+        if pw.is_empty() {
+            toast(&s, "Password is empty");
+        } else if pw != repeat {
+            toast(&s, "Passwords do not match");
+        } else {
+            on_ok(pw);
+        }
     });
     dlg.present();
 }
