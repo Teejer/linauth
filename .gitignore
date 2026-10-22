@@ -1,0 +1,9 @@
+# upstream WinAuth source clone (reference only, not part of this repo)
+/src
+# original Windows binary
+/WinAuth.exe
+# local secrets, never commit
+/.secret
+# build artifacts
+/app/target
+**/*.rs.bk

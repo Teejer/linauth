@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Codes
+GenericName=Two-factor authenticator
+Comment=Native TOTP/HOTP authenticator, WinAuth-backup compatible
+Exec=winauth-gtk
+Icon=winauth-gtk
+Terminal=false
+Categories=Utility;Security;
+StartupWMClass=winauth-gtk
+Keywords=2fa;totp;otp;authenticator;winauth;

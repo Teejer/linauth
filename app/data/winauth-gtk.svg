@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3584e4"/>
+      <stop offset="1" stop-color="#1a5fb4"/>
+    </linearGradient>
+  </defs>
+  <!-- squircle background -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <!-- countdown ring, 270° arc -->
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="8"/>
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#ffffff" stroke-width="8"
+          stroke-linecap="round" stroke-dasharray="188 252" transform="rotate(-90 64 64)"/>
+  <!-- key -->
+  <circle cx="64" cy="54" r="11" fill="none" stroke="#ffffff" stroke-width="7"/>
+  <rect x="60.5" y="62" width="7" height="26" rx="3.5" fill="#ffffff"/>
+  <rect x="64" y="76" width="10" height="5" rx="2.5" fill="#ffffff"/>
+  <rect x="64" y="84" width="8" height="5" rx="2.5" fill="#ffffff"/>
+</svg>
