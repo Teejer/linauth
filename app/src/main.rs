@@ -340,24 +340,7 @@ fn build_ui(app: &adw::Application) {
 
     // initial load (ask for password if the store is encrypted)
     if state.store_path.is_encrypted() {
-        let s = state.clone();
-        prompt_password(
-            &window,
-            "Unlock",
-            "Your account store is encrypted.",
-            "_Unlock",
-            move |pw| {
-                match s.store_path.load(Some(&pw)) {
-                    Ok(st) => {
-                        *s.store.borrow_mut() = st;
-                        *s.password.borrow_mut() = Some(pw);
-                        rebuild_rows(&s);
-                    }
-                    Err(e) => toast(&s, &e),
-                }
-                glib::Propagation::Stop
-            },
-        );
+        unlock_store(&state, &window);
     } else {
         match state.store_path.load(None) {
             Ok(st) => {
@@ -438,6 +421,32 @@ fn toast(state: &AppState, msg: &str) {
     state
         .toast_overlay
         .add_toast(adw::Toast::builder().title(msg).build());
+}
+
+/// modal unlock loop: keeps re-prompting until the right password or cancel
+fn unlock_store(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+    let s = state.clone();
+    let w = window.clone();
+    prompt_password(
+        window,
+        "Unlock",
+        "Your account store is encrypted.",
+        "_Unlock",
+        move |pw| {
+            match s.store_path.load(Some(&pw)) {
+                Ok(st) => {
+                    *s.store.borrow_mut() = st;
+                    *s.password.borrow_mut() = Some(pw);
+                    rebuild_rows(&s);
+                }
+                Err(_) => {
+                    toast(&s, "Wrong password");
+                    unlock_store(&s, &w);
+                }
+            }
+            glib::Propagation::Stop
+        },
+    );
 }
 
 fn make_row(state: &Rc<AppState>, acc: &Account) -> (gtk::ListBoxRow, RowState) {
@@ -645,7 +654,7 @@ where
     group.add(&entry);
     dlg.set_extra_child(Some(&group));
     dlg.add_response("cancel", "Cancel");
-    dlg.add_response(ok, "ok");
+    dlg.add_response("ok", ok);
     dlg.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
     dlg.set_default_response(Some("ok"));
     dlg.set_close_response("cancel");
