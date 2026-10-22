@@ -1,3 +1,4 @@
+mod export;
 mod import;
 mod store;
 mod totp;
@@ -70,6 +71,10 @@ fn main() {
     if let Some(pos) = args.iter().position(|a| a == "import") {
         let path = args.get(pos + 1).cloned().unwrap_or_default();
         std::process::exit(cli_import(&path));
+    }
+    if let Some(pos) = args.iter().position(|a| a == "export") {
+        let path = args.get(pos + 1).cloned().unwrap_or_default();
+        std::process::exit(cli_export(&path));
     }
 
     let app = adw::Application::builder().application_id(APP_ID).build();
@@ -155,6 +160,54 @@ fn cli_import(path: &str) -> i32 {
     0
 }
 
+/// CLI: `linauth export <backup.zip|backup.txt>` — WinAuth-compatible output;
+/// zip encryption password from WINAUTH_ZIP_PWD, store read with optional
+/// WINAUTH_STORE_PWD.
+fn cli_export(path: &str) -> i32 {
+    if path.is_empty() {
+        eprintln!("usage: linauth export <backup.zip|backup.txt>");
+        eprintln!("       (zip export requires the password in $WINAUTH_ZIP_PWD)");
+        return 2;
+    }
+    let store_path = StorePath::new();
+    let store = match store_path.load(std::env::var("WINAUTH_STORE_PWD").ok().as_deref()) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("cannot load account store: {e}");
+            return 1;
+        }
+    };
+    let accounts: Vec<Account> = store.accounts.iter().map(|sa| sa.account.clone()).collect();
+    if accounts.is_empty() {
+        eprintln!("account store is empty, nothing to export");
+        return 1;
+    }
+    let p = Path::new(path);
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let res = if ext == "zip" {
+        let pw = std::env::var("WINAUTH_ZIP_PWD").ok().filter(|p| !p.is_empty());
+        match pw {
+            Some(pw) => export::write_zip(p, &accounts, Some(&pw)),
+            None => {
+                eprintln!("zip export needs a password: set WINAUTH_ZIP_PWD or export to .txt");
+                return 2;
+            }
+        }
+    } else {
+        export::write_txt(p, &accounts)
+    };
+    match res {
+        Ok(()) => {
+            println!("exported {} account(s) to {}", accounts.len(), path);
+            0
+        }
+        Err(e) => {
+            eprintln!("export failed: {e}");
+            1
+        }
+    }
+}
+
 fn install_autostart() -> i32 {
     let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "linauth".into());
     let dir = std::env::var_os("XDG_CONFIG_HOME")
@@ -197,8 +250,13 @@ fn build_ui(app: &adw::Application) {
         .icon_name("list-add-symbolic")
         .tooltip_text("Add otpauth:// URI")
         .build();
+    let export_btn = gtk::Button::builder()
+        .icon_name("document-save-symbolic")
+        .tooltip_text("Export backup (.zip restores in WinAuth too)")
+        .build();
     header.pack_end(&import_btn);
     header.pack_end(&add_btn);
+    header.pack_end(&export_btn);
 
     let search = gtk::SearchEntry::builder()
         .placeholder_text("Search accounts")
@@ -279,6 +337,11 @@ fn build_ui(app: &adw::Application) {
         let s = state.clone();
         let w = window.clone();
         move |_| prompt_uri(&s, &w)
+    });
+    export_btn.connect_clicked({
+        let s = state.clone();
+        let w = window.clone();
+        move |_| do_export(&s, &w)
     });
     search.connect_search_changed({
         let s = state.clone();
@@ -623,4 +686,86 @@ fn finish_import(state: &Rc<AppState>, path: &Path, zip_pw: Option<&str>) {
         }
         Err(e) => toast(state, &format!("import failed: {e}")),
     }
+}
+
+fn do_export(state: &Rc<AppState>, window: &adw::ApplicationWindow) {
+    let accounts: Vec<Account> = state.store.borrow().accounts.iter().map(|sa| sa.account.clone()).collect();
+    if accounts.is_empty() {
+        toast(state, "No accounts to export");
+        return;
+    }
+    let dialog = gtk::FileDialog::builder()
+        .title("Export backup")
+        .initial_name(&export::default_backup_name(&export::civil_date(now_unix())))
+        .build();
+    let s = state.clone();
+    let w = window.clone();
+    dialog.save(Some(window), gtk::gio::Cancellable::NONE, move |result| {
+        let Ok(file) = result else { return };
+        let mut path = file.path().unwrap_or_default();
+        if path.as_os_str().is_empty() {
+            toast(&s, "could not resolve chosen file");
+            return;
+        }
+        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if ext.is_empty() {
+            path.set_extension("zip");
+        }
+        if path.extension().map(|e| e.to_string_lossy().to_lowercase()).as_deref() == Some("txt") {
+            match export::write_txt(&path, &accounts) {
+                Ok(()) => toast(&s, &format!("Exported {} account(s)", accounts.len())),
+                Err(e) => toast(&s, &format!("export failed: {e}")),
+            }
+        } else {
+            prompt_export_password(&w, &s, path, accounts);
+        }
+    });
+}
+
+fn prompt_export_password(
+    window: &adw::ApplicationWindow,
+    state: &Rc<AppState>,
+    path: PathBuf,
+    accounts: Vec<Account>,
+) {
+    let dlg = adw::MessageDialog::builder()
+        .transient_for(window)
+        .modal(true)
+        .heading("Backup password")
+        .body("WinAuth-compatible ZipCrypto. Pick a password you will remember — it is the only copy.")
+        .build();
+    let entry = adw::PasswordEntryRow::builder().title("Password").build();
+    let group = adw::PreferencesGroup::new();
+    group.add(&entry);
+    dlg.set_extra_child(Some(&group));
+    dlg.add_response("cancel", "Cancel");
+    dlg.add_response("plain", "_Unencrypted zip");
+    dlg.add_response("ok", "_Export");
+    dlg.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
+    dlg.set_default_response(Some("ok"));
+    dlg.set_close_response("cancel");
+    let s = state.clone();
+    dlg.connect_response(None, move |_, resp| match resp {
+        "ok" => {
+            let pw = entry.text().to_string();
+            entry.set_text("");
+            if pw.is_empty() {
+                toast(&s, "Password is empty \u{2014} use \u{201c}Unencrypted zip\u{201d} or Cancel");
+                return;
+            }
+            match export::write_zip(&path, &accounts, Some(&pw)) {
+                Ok(()) => toast(&s, &format!("Exported {} account(s), encrypted", accounts.len())),
+                Err(e) => toast(&s, &format!("export failed: {e}")),
+            }
+        }
+        "plain" => {
+            entry.set_text("");
+            match export::write_zip(&path, &accounts, None) {
+                Ok(()) => toast(&s, &format!("Exported {} account(s), NOT encrypted", accounts.len())),
+                Err(e) => toast(&s, &format!("export failed: {e}")),
+            }
+        }
+        _ => {}
+    });
+    dlg.present();
 }

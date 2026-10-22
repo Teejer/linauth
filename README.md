@@ -10,6 +10,8 @@ without Wine or .NET — the name is the natural conclusion.
 
 - Imports WinAuth master backups: password-protected `.zip` (ZipCrypto) or
   plain text with one `otpauth://` URI per line
+- Exports backups in WinAuth's own format — ZipCrypto-protected zip with a
+  `.txt` entry named after the zip (or plain `.txt`), restorable by WinAuth
 - Standard `otpauth://` support incl. WinAuth quirks (`+` as space in labels,
   unpadded base32, `icon=`/`serial=`/`deviceid=` extras preserved)
 - TOTP (SHA1/256/512, any period/digits) and HOTP (counter advances on use)
@@ -40,6 +42,8 @@ Requires GTK 4.12+, libadwaita 1.4+ dev packages.
 linauth codes                     # print current codes
 linauth import backup.zip         # zip pw: $WINAUTH_ZIP_PWD,
                                   # encrypt store with: $WINAUTH_STORE_PWD
+linauth export backup.zip         # WinAuth-compatible backup;
+                                  # password from $WINAUTH_ZIP_PWD (.txt = plain)
 ```
 
 ## Security notes
