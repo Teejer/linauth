@@ -359,23 +359,6 @@ fn build_ui(app: &adw::Application) -> adw::ApplicationWindow {
         search: search.clone(),
     });
 
-    // initial load (ask for password if the store is encrypted)
-    if state.store_path.is_encrypted() {
-        unlock_store(&state, &window);
-    } else {
-        match state.store_path.load(None) {
-            Ok(st) => {
-                let nonempty = !st.accounts.is_empty();
-                *state.store.borrow_mut() = st;
-                rebuild_rows(&state);
-                if nonempty && !state.store_path.encryption_declined() {
-                    prompt_encrypt_now(&state, &window);
-                }
-            }
-            Err(e) => toast(&state, &format!("cannot load accounts: {e}")),
-        }
-    }
-
     let mp_act = gtk::gio::SimpleAction::new("master-password", None);
     {
         let s = state.clone();
@@ -436,7 +419,27 @@ fn build_ui(app: &adw::Application) -> adw::ApplicationWindow {
         ControlFlow::Continue
     });
 
+    // present FIRST, then show startup dialogs: a modal shown before its parent
+    // is mapped can stack *behind* the main window (grabbing input invisibly)
     window.present();
+
+    // initial load (ask for password if the store is encrypted)
+    if state.store_path.is_encrypted() {
+        unlock_store(&state, &window);
+    } else {
+        match state.store_path.load(None) {
+            Ok(st) => {
+                let nonempty = !st.accounts.is_empty();
+                *state.store.borrow_mut() = st;
+                rebuild_rows(&state);
+                if nonempty && !state.store_path.encryption_declined() {
+                    prompt_encrypt_now(&state, &window);
+                }
+            }
+            Err(e) => toast(&state, &format!("cannot load accounts: {e}")),
+        }
+    }
+
     window
 }
 
